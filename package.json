@@ -1,0 +1,36 @@
+{
+  "name": "@zappimoney/spark-allowance-spender",
+  "version": "0.1.0",
+  "description": "Local Spark allowance spender. Seals its own seed and pulls USDB. It never sees a pot phrase.",
+  "type": "module",
+  "bin": {
+    "spark-allowance-spender": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/*.test.js",
+    "prepare": "npm run build",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@buildonspark/spark-sdk": "0.12.1",
+    "@scure/bip39": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}
