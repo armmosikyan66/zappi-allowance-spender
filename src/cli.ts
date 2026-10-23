@@ -1,9 +1,19 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { generateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english'
 import { pullAllowance, type AllowancePullInput } from './pull.js'
 import { readSealedPhrase, spenderDirectory, writeSealedPhrase } from './seal.js'
 import { asPullWallet, withSpenderWallet } from './wallet.js'
+
+export function spenderVersion(): string {
+  const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: string }
+  if (!pkg.version) throw new Error('The spender package has no version.')
+  return pkg.version
+}
 
 export async function ensureSpenderPhrase(dir: string): Promise<string> {
   const existing = await readSealedPhrase(dir)
@@ -73,6 +83,10 @@ export function parsePullArgs(argv: string[]): AllowancePullInput {
 
 async function main(argv: string[]): Promise<void> {
   const command = argv[0]
+  if (command === 'version') {
+    process.stdout.write(`${spenderVersion()}\n`)
+    return
+  }
   if (command === 'pubkey') {
     const key = await printSpenderPublicKey()
     process.stdout.write(`${key}\n`)
@@ -83,7 +97,7 @@ async function main(argv: string[]): Promise<void> {
     process.stdout.write(`${txId}\n`)
     return
   }
-  throw new Error('Use pubkey, or pull with the allowance id and amount.')
+  throw new Error('Use version, pubkey, or pull with the allowance id and amount.')
 }
 
 const isDirect = process.argv[1]?.endsWith('cli.js') || process.argv[1]?.endsWith('cli.ts')

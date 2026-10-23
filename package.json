@@ -1,11 +1,17 @@
 {
-  "name": "@zappimoney/spark-allowance-spender",
+  "name": "@zappimoney/zappi-allowance-spender",
   "version": "0.1.0",
-  "description": "Local Spark allowance spender. Seals its own seed and pulls USDB. It never sees a pot phrase.",
+  "description": "Separate local program that seals its own Spark spender seed and pulls a USDB allowance. It is not zappi-signer and it never sees a pot phrase.",
   "type": "module",
   "bin": {
-    "spark-allowance-spender": "./dist/cli.js"
+    "zappi-allowance-spender": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
   "exports": {
     ".": {
       "types": "./dist/cli.d.ts",
@@ -14,7 +20,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/*.test.js",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test dist/*.test.js",
     "prepare": "npm run build",
     "prepack": "npm run build"
   },
