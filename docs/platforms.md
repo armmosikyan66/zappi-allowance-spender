@@ -12,6 +12,8 @@ This is not the `zappi-signer` binary. That program builds a standalone executab
 
 `<origin>` is `https://zappi.money`, or `https://dev.zappi.money` when the agent is on staging. Node.js 20.9 or newer has to be installed first. A phone has no shell for this program.
 
+An agent does not use the pipe in that table. It saves `/spender/install` to `/tmp/zappi-spender-install.sh` and runs that file, or saves `/spender/windows` to `$env:TEMP\zappi-spender.ps1` and runs that file. It does not ask the human to install.
+
 The Spark SDK package used here ships `bare-tls` prebuilds for Linux and Windows, arm64 and x64. macOS gets its build from the same `npm install` on that Mac. The installer refuses any other OS or CPU.
 
 The seal is a file pair, not a keychain item. On macOS and Linux the directory is mode `0700` and the files are mode `0600`. Windows keeps the same files under `%USERPROFILE%\.zappi-allowance-spender` and does not enforce those Unix modes.
