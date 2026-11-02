@@ -11,9 +11,16 @@ type OpenedWallet = {
   cleanupConnections?: () => Promise<void>
 }
 
+function spenderNetwork(): 'MAINNET' | 'REGTEST' {
+  const value = (process.env.SPARK_NETWORK ?? '').trim().toUpperCase()
+  if (value === '' || value === 'MAINNET') return 'MAINNET'
+  if (value === 'REGTEST') return 'REGTEST'
+  throw new Error('SPARK_NETWORK must be MAINNET or REGTEST.')
+}
+
 /**
- * Opens the spender seed for one call. Account 1, mainnet. The caller
- * zeroes the phrase buffer after this returns.
+ * Opens the spender seed for one call. Account 1 on SPARK_NETWORK
+ * (unset is MAINNET). The caller zeroes the phrase buffer after this returns.
  */
 export async function withSpenderWallet<T>(
   phrase: string,
@@ -23,7 +30,7 @@ export async function withSpenderWallet<T>(
     mnemonicOrSeed: phrase,
     accountNumber: ACCOUNT_NUMBER,
     options: {
-      network: 'MAINNET',
+      network: spenderNetwork(),
       optimizationOptions: { auto: false, multiplicity: 0 },
       tokenOptimizationOptions: { enabled: false },
     },

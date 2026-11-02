@@ -9,6 +9,13 @@ import { readSealedPhrase, spenderDirectory, writeSealedPhrase } from './seal.js
 import { asPullWallet, withSpenderWallet } from './wallet.js'
 
 export function spenderVersion(): string {
+  // scripts/build-bin.mjs replaces these two env reads in the standalone
+  // binary. The binary has no package.json beside it.
+  if (process.env.ZAPPI_ALLOWANCE_SPENDER_STANDALONE === '1') {
+    const embedded = process.env.ZAPPI_ALLOWANCE_SPENDER_EMBEDDED_VERSION?.trim() ?? ''
+    if (!embedded) throw new Error('The standalone spender has no version.')
+    return embedded
+  }
   const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: string }
   if (!pkg.version) throw new Error('The spender package has no version.')
@@ -100,7 +107,11 @@ async function main(argv: string[]): Promise<void> {
   throw new Error('Use version, pubkey, or pull with the allowance id and amount.')
 }
 
-const isDirect = process.argv[1]?.endsWith('cli.js') || process.argv[1]?.endsWith('cli.ts')
+// A Node SEA binary's argv[1] is the executable path, not cli.js.
+const isDirect =
+  process.env.ZAPPI_ALLOWANCE_SPENDER_STANDALONE === '1' ||
+  process.argv[1]?.endsWith('cli.js') === true ||
+  process.argv[1]?.endsWith('cli.ts') === true
 if (isDirect) {
   main(process.argv.slice(2)).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'Pull failed.'

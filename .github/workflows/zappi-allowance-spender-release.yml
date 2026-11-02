@@ -1,0 +1,270 @@
+# Builds, signs, and publishes zappi-allowance-spender for every desktop target.
+#
+# Trigger: push a tag named zappi-allowance-spender-v<version>
+# (for example zappi-allowance-spender-v0.2.0). The tag must match
+# package.json. Bump the version, commit, then tag.
+#
+# Artifacts, per target:
+#   zappi-allowance-spender-<target>[.exe]
+#   zappi-allowance-spender-<target>[.exe].sig
+#   zappi-allowance-spender-<target>[.exe].sha256
+#   zappi-allowance-spender-<target>[.exe].provenance.json
+#
+# The signing key is the repo secret ZAPPI_ALLOWANCE_SPENDER_RELEASE_KEY:
+# base64 of a 64-byte Ed25519 secret (seed(32) || public-key(32)). Its public
+# half must equal PUBLISHER_PUBKEY_PEM in web/install/allowance-spender.sh and
+# web/install/allowance-spender.ps1. The key is never logged. sign-release.mjs
+# refuses to write artifacts without it.
+#
+# After the release, copy the win-x64 sha256 into $WinX64Sha256 in the
+# Windows installer and deploy the web app. Until that pin is real, Windows
+# installs fail closed. macOS and Linux verify the signature and do not need
+# that pin.
+#
+# The canary fetches https://dev.zappi.money/spender/install. If that host
+# still serves the previous installer, the canary warns and does not fail
+# the release.
+
+name: zappi-allowance-spender release
+
+on:
+  push:
+    tags:
+      - 'zappi-allowance-spender-v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zappi-allowance-spender-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: darwin-arm64
+            node_arch: arm64
+            runtime: sea
+          - os: macos-14
+            target: darwin-x64
+            node_arch: x64
+            runtime: sea
+          - os: ubuntu-24.04
+            target: linux-x64
+            node_arch: x64
+            runtime: sea
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            node_arch: arm64
+            runtime: sea
+          - os: ubuntu-24.04
+            target: linux-x64-musl
+            node_arch: x64
+            runtime: bun
+          - os: ubuntu-24.04-arm
+            target: linux-arm64-musl
+            node_arch: arm64
+            runtime: bun
+          - os: windows-2022
+            target: win-x64
+            node_arch: x64
+            runtime: sea
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET: ${{ matrix.target }}
+      ZAPPI_ALLOWANCE_SPENDER_VERSION: ${{ github.ref_name }}
+      ZAPPI_ALLOWANCE_SPENDER_COMMIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches package.json version
+        run: |
+          set -euo pipefail
+          pkg_version="$(node -p "require('./package.json').version")"
+          expected="zappi-allowance-spender-v${pkg_version}"
+          if [ "${{ github.ref_name }}" != "$expected" ]; then
+            echo "::error::tag ${{ github.ref_name }} does not match package.json version $pkg_version (expected tag $expected)."
+            echo "::error::Bump package.json, commit, then retag."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          architecture: ${{ matrix.node_arch }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: oven-sh/setup-bun@v2
+        if: matrix.runtime == 'bun'
+        with:
+          bun-version: '1.3.12'
+
+      - name: Install and test
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+
+      - name: Build standalone binary
+        run: |
+          set -euo pipefail
+          npm run build:bin
+
+      - name: Smoke-test glibc or desktop binary
+        if: matrix.runtime == 'sea'
+        run: |
+          set -euo pipefail
+          ext=""
+          if [ "$TARGET" = "win-x64" ]; then
+            ext=".exe"
+          fi
+          node scripts/smoke-bin.mjs "dist/bin/zappi-allowance-spender-${TARGET}${ext}" 180000
+
+      - name: Smoke-test musl binary in Alpine
+        if: matrix.runtime == 'bun'
+        run: |
+          set -euo pipefail
+          expected="$(node -p "require('./package.json').version")"
+          bin="$PWD/dist/bin/zappi-allowance-spender-${TARGET}"
+          docker run --rm -i --network host \
+            -e "EXPECTED=$expected" \
+            -v "$bin:/usr/local/bin/zappi-allowance-spender:ro" \
+            alpine:3.21 \
+            sh -s <<'EOF'
+          set -eu
+          apk add --no-cache ca-certificates >/dev/null
+          export HOME=/tmp/smoke
+          export ZAPPI_ALLOWANCE_SPENDER_DIR=/tmp/seal
+          mkdir -p "$ZAPPI_ALLOWANCE_SPENDER_DIR"
+          ver="$(zappi-allowance-spender version | tr -d '\r')"
+          test "$ver" = "$EXPECTED"
+          key="$(zappi-allowance-spender pubkey | tr -d '\r')"
+          printf '%s\n' "$key" | grep -Eq '^[0-9a-fA-F]{66}$'
+          EOF
+
+      - name: Sign release artifacts
+        env:
+          ZAPPI_ALLOWANCE_SPENDER_RELEASE_KEY: ${{ secrets.ZAPPI_ALLOWANCE_SPENDER_RELEASE_KEY }}
+        run: |
+          set -euo pipefail
+          ext=""
+          if [ "$TARGET" = "win-x64" ]; then
+            ext=".exe"
+          fi
+          node scripts/sign-release.mjs "dist/bin/zappi-allowance-spender-${TARGET}${ext}" --provenance
+
+      - name: Stage release files
+        run: |
+          set -euo pipefail
+          ext=""
+          if [ "$TARGET" = "win-x64" ]; then
+            ext=".exe"
+          fi
+          stage="release-stage"
+          mkdir -p "$stage"
+          base="dist/bin/zappi-allowance-spender-${TARGET}${ext}"
+          cp "$base" "$base.sig" "$base.sha256" "$base.provenance.json" "$stage/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spender-${{ matrix.target }}
+          if-no-files-found: error
+          path: release-stage/*
+
+  publish:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: spender-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  canary:
+    name: canary — install via the live one-liner
+    needs: publish
+    runs-on: macos-14
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: OpenSSL 3
+        run: brew install openssl@3
+
+      - name: Install from dev.zappi.money/spender/install and smoke the result
+        run: |
+          set -euo pipefail
+          new_tag="${{ github.ref_name }}"
+          work_dir="$(mktemp -d)"
+          installer="$work_dir/canary-installer.sh"
+          attempts=6
+          attempt=1
+          while [ "$attempt" -le "$attempts" ]; do
+            echo "=== canary attempt $attempt/$attempts ==="
+            if ! curl -fsSL --retry 3 --max-time 60 https://dev.zappi.money/spender/install -o "$installer"; then
+              echo "canary: could not fetch the installer from dev.zappi.money"
+              attempt=$((attempt + 1)); sleep 55; continue
+            fi
+            served_tag="$(sed -n 's/^RELEASE_TAG="\(.*\)"$/\1/p' "$installer" | head -n 1)"
+            if [ -z "$served_tag" ]; then
+              echo "canary: served installer has no RELEASE_TAG (web still serves the previous installer)"
+              attempt=$((attempt + 1)); sleep 55; continue
+            fi
+            echo "canary: dev.zappi.money serves $served_tag (this release: $new_tag)"
+            if [ "$served_tag" != "$new_tag" ]; then
+              echo "canary: web deploy still pins $served_tag"
+              attempt=$((attempt + 1)); sleep 55; continue
+            fi
+            install_out="$(sh "$installer" 2>&1)" && install_rc=0 || install_rc=$?
+            printf '%s\n' "$install_out"
+            if [ "$install_rc" -ne 0 ]; then
+              echo "canary: installer exited $install_rc"
+              attempt=$((attempt + 1)); sleep 55; continue
+            fi
+            installed_tag="$(printf '%s\n' "$install_out" | sed -n 's/^Installed release: //p' | head -n 1)"
+            if [ "$installed_tag" != "$new_tag" ]; then
+              echo "canary: installer did not report $new_tag"
+              attempt=$((attempt + 1)); sleep 55; continue
+            fi
+            bin_path="$HOME/.local/bin/zappi-allowance-spender"
+            if [ ! -x "$bin_path" ]; then
+              echo "canary: installed command not found at $bin_path"
+              attempt=$((attempt + 1)); sleep 55; continue
+            fi
+            if node scripts/smoke-bin.mjs "$bin_path" 180000; then
+              echo "canary: PASS — $new_tag was installed by the public one-liner and the installed binary passed smoke"
+              exit 0
+            fi
+            echo "canary: $new_tag installed but smoke failed"
+            attempt=$((attempt + 1)); sleep 55
+          done
+          if [ -f "$installer" ] && ! grep -q "^RELEASE_TAG=\"$new_tag\"$" "$installer"; then
+            echo "::warning::canary PASS with warning: dev.zappi.money does not serve $new_tag yet. The release assets were already gated by the build smoke jobs."
+            exit 0
+          fi
+          echo "::error::canary FAIL: $new_tag could not be installed and smoked via https://dev.zappi.money/spender/install after $attempts attempts."
+          exit 1
