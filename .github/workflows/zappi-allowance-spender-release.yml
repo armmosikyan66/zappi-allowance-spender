@@ -142,7 +142,8 @@ jobs:
             alpine:3.21 \
             sh -s <<'EOF'
           set -eu
-          apk add --no-cache ca-certificates >/dev/null
+          # bun --compile still links libstdc++. Stock Alpine does not ship it.
+          apk add --no-cache ca-certificates libstdc++ >/dev/null
           export HOME=/tmp/smoke
           export ZAPPI_ALLOWANCE_SPENDER_DIR=/tmp/seal
           mkdir -p "$ZAPPI_ALLOWANCE_SPENDER_DIR"

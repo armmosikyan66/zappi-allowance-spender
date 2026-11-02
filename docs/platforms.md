@@ -13,7 +13,7 @@
 
 An agent does not use the pipe in that table. It saves `/spender/install` to `/tmp/zappi-spender-install.sh` and runs that file, or saves `/spender/windows` to `$env:TEMP\zappi-spender.ps1` and runs that file. It does not ask the human to install.
 
-glibc Linux and the desktop targets are Node SEA binaries. musl Linux (Alpine, and many container images) is a Bun-compiled binary, because SEA cannot target musl. The release smoke runs that binary inside Alpine. The installer refuses any other OS or CPU.
+glibc Linux and the desktop targets are Node SEA binaries. musl Linux (Alpine, and many container images) is a Bun-compiled binary, because SEA cannot target musl. That binary still needs `libstdc++` (`apk add libstdc++` on Alpine). The release smoke installs that package and runs the binary inside Alpine. The installer refuses any other OS or CPU.
 
 The seal is a file pair, not a keychain item. On macOS and Linux the directory is mode `0700` and the files are mode `0600`. Windows keeps the same files under `%USERPROFILE%\.zappi-allowance-spender` and does not enforce those Unix modes.
 

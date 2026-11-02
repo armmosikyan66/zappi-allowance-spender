@@ -43,7 +43,7 @@ ZAPPI_ALLOWANCE_SPENDER_RELEASE_KEY=... npm run sign:release -- --provenance
 `scripts/build-bin.mjs` bundles `dist/cli.js`. If the Node graph of
 `@buildonspark/spark-sdk` resolves a `.node` file, that file is embedded and
 loaded from a private temp directory. The 0.12.1 Node build has no `.node`
-addon. Musl targets need Bun (`TARGET=linux-x64-musl`).
+addon. Musl targets need Bun (`TARGET=linux-x64-musl`). The compiled musl binary still needs `libstdc++` at runtime.
 
 ## Publish
 
